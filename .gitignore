@@ -1,0 +1,8 @@
+venv/
+.env
+bot.log
+__pycache__/
+expenses.db
+*.db
+*.sqlite
+*.sqlite3
