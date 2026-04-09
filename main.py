@@ -1,14 +1,19 @@
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher, types
 import os
 import aiosqlite  
 import secrets
-from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters.command import Command
+from dotenv import load_dotenv
 from handlers import router
 from database import Database
+from aiogram import BaseMiddleware
+from typing import Callable, Dict, Any, Awaitable
+
+
+
+
 
 async def set_logging():
     logging.basicConfig(
@@ -21,6 +26,24 @@ async def set_logging():
     )
 
 
+class DbMiddleware(BaseMiddleware):
+    def __init__(self, db: Database):
+        super().__init__()
+        self.db = db 
+
+    async def __call__(
+        self,
+        handler: Callable[[types.Message, Dict[str, Any]], Awaitable[Any]],
+        event: types.Message,
+        data: Dict[str, Any]
+    ) -> Any:
+       
+        db = Database('expenses.db')
+        await db.setup()
+        data['db'] = db
+        return await handler(event, data)
+
+
 async def main():
 
     await set_logging()
@@ -31,12 +54,13 @@ async def main():
     db = Database('expenses.db')
 
 
-    await db.setup()
+    dp.message.middleware(DbMiddleware(db))
+    dp.callback_query.middleware(DbMiddleware(db))
     
     dp.include_router(router)
 
 
-    await dp.start_polling(bot, db=db)
+    await dp.start_polling(bot)
 
 
 

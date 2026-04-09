@@ -1,28 +1,99 @@
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, BufferedInputFile, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import BufferedInputFile
 from database import Database
 from utils import create_pie_chart, create_forecast_chart
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram import types
 from keyboards import get_main_menu, get_categories_kb
+import random
+from keyboards import CATEGORIES, get_subcategories_kb, get_categories_kb
 
 router = Router()
+
+GREETINGS = [
+    "Привет! Рад тебя видеть!",
+    "Здравствуй! Как дела?",
+    "Йоу! С возвращением!",
+    "Салют! Чем могу помочь?",
+    "Добро пожаловать!",
+    "Приветик! :)",
+    "Здарова! Погнали!",
+    "Хей! Как настроение?",
+    "О, привет! Давно не виделись!",
+    "Привет-привет!",
+    "Здорово! Что нового?",
+    "Привет! 👋",
+    "Здравствуй! 😊",
+    "Хей-хей! 🎉",
+    "Салют! ✨",
+    "Приветик! 🤗",
+    "Здорова! 🚀",
+    "Добро пожаловать! 🎈",
+    "Привет, дружище! 🍻",
+    "О, привет! 🌟",
+    "Хаюшки! 🐣"
+]
 
 class ExpenseState(StatesGroup):
     waiting_for_category = State()
     waiting_for_amount = State()
-    waiting_for_del_id = State()
+    waiting_for_del_id = State()   
+    waiting_for_subcategory = State()
+
+@router.callback_query(F.data.startswith("maincat_"), StateFilter(ExpenseState.waiting_for_category))
+async def process_main_category(callback: types.CallbackQuery, state: FSMContext):
+    main_key = callback.data[8:]   # убираем "maincat_"
+    main_data = CATEGORIES.get(main_key) # русское значение категории
+    
+    # Сохраняем основную категорию (если нужно)
+    # сохраняем категорию, которую выбрал пользователь, чтобы знать, где мы
+    await state.update_data(main_category=main_key, main_category_name=main_data["name"])
+    
+    # Показываем подкатегории
+    subcats = main_data.get("subcategories", {}) # subcategories это ключ для словаря подкатегорий
+    if subcats:
+        kb = get_subcategories_kb(main_key, subcats)
+        await callback.message.edit_text(f"Выберите подкатегорию для «{main_data['name']}»:", reply_markup=kb)
+        await state.set_state(ExpenseState.waiting_for_subcategory) # режим ожидания выбора подкатегории от юзера 
+    else:
+        # Если подкатегорий нет, сразу переходим к вводу суммы
+        await state.update_data(category=main_data["name"])
+        await callback.message.edit_text(f"Выбрано: {main_data['name']}\nВведите сумму:")
+        await state.set_state(ExpenseState.waiting_for_amount) # режим одижания суммы от юзера
+    await callback.answer() # подтверждаем получение колбэка, чтобы у юзреа не висела загрузка кнопки(которую нажал)
+                          
+
+@router.callback_query(F.data.startswith("subcat_"), StateFilter(ExpenseState.waiting_for_subcategory))
+async def process_subcategories(callback: types.CallbackQuery, state: FSMContext):
+    parts = callback.data.split("_")
+    if len(parts) != 3:
+        await callback.answer("Ошибка", show_alert=True)
+        return
+    main_key, sub_key = parts[1], parts[2]
+
+    sub_name = CATEGORIES.get(main_key, {}).get("subcategories", {}).get(sub_key, "Другое")
+    
+    await state.update_data(category=sub_key)
+
+    await callback.message.edit_text(f"Выбрано: {sub_name}\nВведите сумму:")
+    await state.set_state(ExpenseState.waiting_for_amount)
+    await callback.answer()
+
+@router.callback_query(F.data == "back_to_main_cats")
+async def back_to_main_categories(callback: types.CallbackQuery, state: FSMContext):
+    await state.set_state(ExpenseState.waiting_for_category)
+    await callback.message.edit_text("Выберите категорию:", reply_markup=get_categories_kb())
+    await callback.answer()
 
 
 @router.message(Command("start"))
 async def cmd_start(message: Message):
-    await message.answer("Привет 😃",
-                         reply_markup=get_main_menu()
-                        )
+    greeting = random.choice(GREETINGS)
+    await message.answer(greeting, reply_markup=get_main_menu())
+
+
 
 @router.message(Command("cancel"))
 @router.message(F.text == "❌ Отмена") # Чтобы работало и на команду, и на текст
@@ -47,25 +118,31 @@ async def cmd_add(message: Message, state: FSMContext):
     await state.set_state(ExpenseState.waiting_for_category)
     
 
-
-@router.callback_query(F.data.startswith("cat_"), StateFilter(ExpenseState.waiting_for_category))
-async def process_category_callback(callback: types.CallbackQuery, state: FSMContext):
-    # Убираем префикс "cat_", чтобы получить чистое название категории
-    category_name = callback.data.split("_")[1]
+# добавили новый хэндлер для категорий и подкатегорий
+# @router.callback_query(F.data.startswith("cat_"), StateFilter(ExpenseState.waiting_for_category))
+# async def process_category_callback(callback: types.CallbackQuery, state: FSMContext):
+#     # Убираем префикс "cat_", чтобы получить чистое название категории
+#     category_name = callback.data.split("_")[1]
     
-    await state.update_data(category=category_name)
+#     await state.update_data(category=category_name)
     
-    # Редактируем старое сообщение, чтобы кнопки исчезли, или просто подтверждаем выбор
-    await callback.message.edit_text(f"Выбрана категория: {category_name}\nТеперь введите сумму:")
-    await state.set_state(ExpenseState.waiting_for_amount)
+#     # Редактируем старое сообщение, чтобы кнопки исчезли, или просто подтверждаем выбор
+#     await callback.message.edit_text(f"Выбрана категория: {category_name}\nТеперь введите сумму:")
+#     await state.set_state(ExpenseState.waiting_for_amount)
     
-    # Обязательно подтверждаем обработку callback, чтобы у юзера перестала "мигать" кнопка
-    await callback.answer()
+#     # Обязательно подтверждаем обработку callback, чтобы у юзера перестала "мигать" кнопка
+#     await callback.answer()
 
 @router.message(StateFilter(ExpenseState.waiting_for_amount))
 async def process_amount(message: Message, state: FSMContext, db):
     data = await state.get_data()
-    amount = float(message.text)
+    
+    try:
+
+        amount = float(message.text)
+    except ValueError as e:
+        await message.answer('"❌ Ошибка: введите число')
+
     category = data.get("category")
 
     await db.add_expense(message.from_user.id, amount, category)

@@ -54,14 +54,16 @@ class Database:
             first_day_of_month = now.strftime('%Y-%m-01 00:00:00')
 
             # 2. SQL запрос с фильтром по дате и user_id
+            now = datetime.datetime.now()
             cursor = await db.execute(
                 """
                 SELECT category, SUM(amount) 
                 FROM expenses 
-                WHERE user_id = ? AND date >= ?
+                WHERE user_id = ? AND strftime('%Y-%m', date) = ?
                 GROUP BY category
                 """,
-                (user_id, first_day_of_month)
+                (user_id, now.strftime('%Y-%m'))
+                
             )
             return await cursor.fetchall()   
         
@@ -72,7 +74,7 @@ class Database:
                 """
                 SELECT date(date), SUM(amount)
                 FROM expenses
-                WHERE user_id = ? AND date >= date('now', ?)
+                WHERE user_id = ? AND date >= date('now', ?) AND category NOT IN ('Финансовая подушка')
                 GROUP BY date(date)
                 ORDER BY date(date) ASC
                 """,
