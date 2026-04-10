@@ -17,13 +17,14 @@ from typing import Callable, Dict, Any, Awaitable
 
 async def set_logging():
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.FileHandler('bot.log'),
             logging.StreamHandler()
         ]
     )
+
 
 
 class DbMiddleware(BaseMiddleware):
@@ -38,10 +39,10 @@ class DbMiddleware(BaseMiddleware):
         data: Dict[str, Any]
     ) -> Any:
        
-        db = Database('expenses.db')
-        await db.setup()
-        data['db'] = db
+
+        data['db'] = self.db
         return await handler(event, data)
+
 
 
 async def main():
@@ -51,8 +52,10 @@ async def main():
     token = os.getenv('BOT_TOKEN')
     bot = Bot(token=token)  
     dp = Dispatcher()
-    db = Database('expenses.db')
 
+
+    db = Database('expenses.db')
+    await db.setup()
 
     dp.message.middleware(DbMiddleware(db))
     dp.callback_query.middleware(DbMiddleware(db))

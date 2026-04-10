@@ -1,14 +1,5 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 
-# CATEGORIES = {
-#     "food": "🍕 Еда",
-#     "taxi": "🚕 Такси",
-#     "home": "🏠 Жильё",
-#     "shop": "🛒 Магазины (оффлайн)",
-#     "internet": "📱 Интернет",
-#     "services": "Услуги",
-# }
-
 CATEGORIES = {
     "food": {
         "name": "🍕 Еда",
@@ -73,7 +64,7 @@ CATEGORIES = {
             "financial cushion": {
         "name": "Финансовая подушка",
         
-    }      
+    }         
 
 }        
                 
@@ -81,16 +72,15 @@ CATEGORIES = {
 
 
 
-    
-
 
 
 def get_main_menu():
     buttons = [
         [KeyboardButton(text="➕ Добавить расход"), KeyboardButton(text="🗑 Удалить запись")],
         [KeyboardButton(text="📊 Статистика (мес)"), KeyboardButton(text="📊 Статистика (всё)")],
-        [KeyboardButton(text="❌ Отмена"), KeyboardButton(text="📈 Прогноз")],
-        [KeyboardButton(text="📄 Записи")]
+        [KeyboardButton(text="📄 Записи"), KeyboardButton(text="📈 Прогноз")],
+        [KeyboardButton(text="❌ Отмена"), KeyboardButton(text="📅 Сегодня")],
+        [ KeyboardButton(text="Help")]
     ]
     # resize_keyboard=True делает кнопки маленькими и аккуратными
     # input_field_placeholder — подсказка в поле ввода

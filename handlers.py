@@ -9,6 +9,9 @@ from aiogram import types
 from keyboards import get_main_menu, get_categories_kb
 import random
 from keyboards import CATEGORIES, get_subcategories_kb, get_categories_kb
+# from utils import generate_receipt_img
+from datetime import datetime
+from aiogram.utils.markdown import hbold, hitalic, hlink, hcode
 
 router = Router()
 
@@ -41,6 +44,8 @@ class ExpenseState(StatesGroup):
     waiting_for_amount = State()
     waiting_for_del_id = State()   
     waiting_for_subcategory = State()
+
+
 
 @router.callback_query(F.data.startswith("maincat_"), StateFilter(ExpenseState.waiting_for_category))
 async def process_main_category(callback: types.CallbackQuery, state: FSMContext):
@@ -75,7 +80,7 @@ async def process_subcategories(callback: types.CallbackQuery, state: FSMContext
 
     sub_name = CATEGORIES.get(main_key, {}).get("subcategories", {}).get(sub_key, "Другое")
     
-    await state.update_data(category=sub_key)
+    await state.update_data(category=sub_name)
 
     await callback.message.edit_text(f"Выбрано: {sub_name}\nВведите сумму:")
     await state.set_state(ExpenseState.waiting_for_amount)
@@ -88,10 +93,39 @@ async def back_to_main_categories(callback: types.CallbackQuery, state: FSMConte
     await callback.answer()
 
 
+
+@router.message(Command("Help"))
+@router.message(F.text == "Help")
+async def cmd_help(message: Message):
+
+    text = (
+        
+        f"Я бот для учёта расходов.\n"
+        "Вот что я умею:\n"
+        "➕ /add — добавить расход\n"
+        "📊 /stats — статистика за всё время\n"
+        "📈 /forecast — прогноз трат\n"
+        "🗑 /del — удалить запись\n\n"
+        "Используй кнопки внизу экрана."
+    )
+
+    await message.answer(text, parse_mode='HTML', reply_markup=get_main_menu())
+
+
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     greeting = random.choice(GREETINGS)
     await message.answer(greeting, reply_markup=get_main_menu())
+
+
+@router.message(F.text == "📅 Сегодня")
+async def cmd_today(message: Message, db):
+    expenses = await db.get_today(message.from_user.id)
+    if not expenses:
+        await message.answer('У вас нет записей на сегодня', reply_markup=get_main_menu())
+    else:
+        expense_list = "\n".join([f"{exp[2]}: {exp[3]} руб. ({exp[1]})" for exp in expenses])
+        await message.answer(f"Ваши расходы:\n{expense_list}")    
 
 
 
@@ -118,7 +152,7 @@ async def cmd_add(message: Message, state: FSMContext):
     await state.set_state(ExpenseState.waiting_for_category)
     
 
-# добавили новый хэндлер для категорий и подкатегорий
+# добавили новый хэндлер для категорий и подкатегорий этот больше не нужен
 # @router.callback_query(F.data.startswith("cat_"), StateFilter(ExpenseState.waiting_for_category))
 # async def process_category_callback(callback: types.CallbackQuery, state: FSMContext):
 #     # Убираем префикс "cat_", чтобы получить чистое название категории
@@ -133,23 +167,74 @@ async def cmd_add(message: Message, state: FSMContext):
 #     # Обязательно подтверждаем обработку callback, чтобы у юзера перестала "мигать" кнопка
 #     await callback.answer()
 
-@router.message(StateFilter(ExpenseState.waiting_for_amount))
-async def process_amount(message: Message, state: FSMContext, db):
-    data = await state.get_data()
+
+# для чека
+# @router.message(StateFilter(ExpenseState.waiting_for_amount))
+# async def process_amount(message: Message, state: FSMContext, db):
+#     data = await state.get_data()
+#     category = data.get("category")
     
-    try:
+#     if not category:
+#         await message.answer("❌ Ошибка: категория не найдена. Начните заново /add", reply_markup=get_main_menu())
+#         await state.clear()
+#         return
+    
+#     if not message.text.replace('.', '', 1).isdigit():
+#         await message.answer("Пожалуйста, введите число (сумму).")
+#         return
 
-        amount = float(message.text)
-    except ValueError as e:
-        await message.answer('"❌ Ошибка: введите число')
 
+#     amount = float(message.text)
+#     date_now = datetime.now().strftime("%d.%m.%Y %H:%M")
+
+#     #  Записываем в базу
+#     await db.add_expense(message.from_user.id, amount, category)
+    
+#     #  Генерируем "визуальный чек"
+#     photo_bytes = generate_receipt_img(amount, category, date_now)
+#     photo = BufferedInputFile(photo_bytes, filename="receipt.png")
+
+#     #  Отправляем фото
+#     await message.answer_photo(
+#         photo=photo, 
+#         caption=f"✅ Расход успешно записан!",
+#         reply_markup=get_main_menu()
+#     )
+    
+#     await state.clear()
+
+
+# обычный(без чека)
+@router.message(StateFilter(ExpenseState.waiting_for_amount))
+async def process_amount(message: Message, state: FSMContext, db: Database):
+    data = await state.get_data()
     category = data.get("category")
 
+    if not category:
+        await message.answer("❌ Ошибка: категория не найдена. Начните заново /add", reply_markup=get_main_menu())
+        await state.clear()
+        return
+
+    try:
+        amount = (message.text.strip())
+        if amount.find(','):
+            amount = float(amount.replace(',', '.'))
+
+
+        if amount <= 0:
+            raise ValueError("Сумма должна быть положительной")
+    except ValueError:
+        await message.answer("❌ Ошибка: введите положительное число (например, 150.5)")
+        # Не очищаем состояние, даём пользователю ещё одну попытку
+        return
+
+    # Сохраняем расход
     await db.add_expense(message.from_user.id, amount, category)
-    await state.clear()  
-    await message.answer(f"Расход в категории '{category}' на сумму {amount} записан!",
-                         reply_markup=get_main_menu()
-                        )
+    await state.clear()
+    await message.answer(
+        f"✅ Расход в категории '{category}' на сумму {amount} руб. записан!",
+        reply_markup=get_main_menu()
+    )
       
 @router.message(Command("show"))
 @router.message(F.text == "📄 Записи")
@@ -257,7 +342,7 @@ async def cmd_del_confirm(message: Message, db: Database, state: FSMContext):
         return
 
     await db.del_stat_text(message.from_user.id, int(message.text))
-    await message.answer(f"✅ Запись №{message.text} удалена.")
+    await message.answer(f"✅ Запись №{message.text} удалена.", reply_markup=get_main_menu())
     await state.clear() # Сбрасываем состояние 
 
     
